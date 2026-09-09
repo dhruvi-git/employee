@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Employee Management System</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  body { background: #f4f6f9; }
+  .navbar-brand { font-weight: 600; }
+  #toastBox { position: fixed; top: 1rem; right: 1rem; z-index: 2000; min-width: 260px; }
+  .table-actions button { margin-right: 4px; }
+</style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark bg-dark mb-4">
+  <div class="container">
+    <span class="navbar-brand">🧑‍💼 Employee Management System</span>
+    <span class="text-light small" id="dbStatus">Checking database...</span>
+  </div>
+</nav>
+
+<div class="container">
+
+  <div id="toastBox"></div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h5 class="card-title" id="formTitle">Add New Employee</h5>
+      <form id="employeeForm" novalidate>
+        <input type="hidden" id="EmployeeID" />
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Employee Name</label>
+            <input type="text" class="form-control" id="EmployeeName" required maxlength="100">
+            <div class="invalid-feedback">Please enter the employee name.</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control" id="Email" required maxlength="100">
+            <div class="invalid-feedback">Please enter a valid email address.</div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Department</label>
+            <input type="text" class="form-control" id="Department" required maxlength="100">
+            <div class="invalid-feedback">Please enter a department.</div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Designation</label>
+            <input type="text" class="form-control" id="Designation" required maxlength="100">
+            <div class="invalid-feedback">Please enter a designation.</div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Salary</label>
+            <input type="number" class="form-control" id="Salary" required min="0" step="0.01">
+            <div class="invalid-feedback">Please enter a valid, non-negative salary.</div>
+          </div>
+        </div>
+        <div class="mt-3">
+          <button type="submit" class="btn btn-primary" id="submitBtn">Add Employee</button>
+          <button type="button" class="btn btn-secondary d-none" id="cancelEditBtn">Cancel Edit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h5 class="card-title mb-0">Employee Records</h5>
+        <div class="input-group" style="max-width: 320px;">
+          <input type="text" id="searchInput" class="form-control" placeholder="Search by name, email, dept...">
+          <button class="btn btn-outline-secondary" id="searchBtn">Search</button>
+          <button class="btn btn-outline-secondary" id="clearBtn">Clear</button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th><th>Name</th><th>Email</th><th>Department</th>
+              <th>Designation</th><th>Salary</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="employeeTableBody">
+            <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api/employees';
+const form = document.getElementById('employeeForm');
+const tableBody = document.getElementById('employeeTableBody');
+const submitBtn = document.getElementById('submitBtn');
+const cancelEditBtn = document.getElementById('cancelEditBtn');
+const formTitle = document.getElementById('formTitle');
+
+function showToast(message, type = 'success') {
+  const box = document.getElementById('toastBox');
+  const div = document.createElement('div');
+  div.className = `alert alert-${type} shadow`;
+  div.textContent = message;
+  box.appendChild(div);
+  setTimeout(() => div.remove(), 3500);
+}
+
+async function checkHealth() {
+  const el = document.getElementById('dbStatus');
+  try {
+    const res = await fetch('/api/health');
+    const data = await res.json();
+    el.textContent = res.ok ? '● Database connected' : '● Database error';
+    el.className = res.ok ? 'text-success small' : 'text-danger small';
+  } catch {
+    el.textContent = '● Cannot reach server';
+    el.className = 'text-danger small';
+  }
+}
+
+function renderRows(employees) {
+  if (!employees.length) {
+    tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No employees found.</td></tr>';
+    return;
+  }
+  tableBody.innerHTML = employees.map(e => `
+    <tr>
+      <td>${e.EmployeeID}</td>
+      <td>${escapeHtml(e.EmployeeName)}</td>
+      <td>${escapeHtml(e.Email)}</td>
+      <td>${escapeHtml(e.Department)}</td>
+      <td>${escapeHtml(e.Designation)}</td>
+      <td>${Number(e.Salary).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+      <td class="table-actions">
+        <button class="btn btn-sm btn-outline-primary" onclick="editEmployee(${e.EmployeeID})">Edit</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteEmployee(${e.EmployeeID})">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, s => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[s]));
+}
+
+let allEmployees = [];
+
+async function loadEmployees(search = '') {
+  try {
+    const url = search ? `${API}?search=${encodeURIComponent(search)}` : API;
+    const res = await fetch(url);
+    const data = await res.json();
+    allEmployees = data;
+    renderRows(data);
+  } catch (err) {
+    showToast('Failed to load employees: ' + err.message, 'danger');
+  }
+}
+
+function getFormData() {
+  return {
+    EmployeeName: document.getElementById('EmployeeName').value.trim(),
+    Email: document.getElementById('Email').value.trim(),
+    Department: document.getElementById('Department').value.trim(),
+    Designation: document.getElementById('Designation').value.trim(),
+    Salary: parseFloat(document.getElementById('Salary').value)
+  };
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!form.checkValidity()) {
+    form.classList.add('was-validated');
+    return;
+  }
+  form.classList.remove('was-validated');
+
+  const id = document.getElementById('EmployeeID').value;
+  const payload = getFormData();
+  const isEdit = !!id;
+
+  try {
+    const res = await fetch(isEdit ? `${API}/${id}` : API, {
+      method: isEdit ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      const msg = data.errors ? data.errors.join(' ') : (data.error || 'Something went wrong.');
+      showToast(msg, 'danger');
+      return;
+    }
+
+    showToast(isEdit ? 'Employee updated successfully.' : 'Employee added successfully.');
+    resetForm();
+    loadEmployees(document.getElementById('searchInput').value.trim());
+  } catch (err) {
+    showToast('Request failed: ' + err.message, 'danger');
+  }
+});
+
+function resetForm() {
+  form.reset();
+  form.classList.remove('was-validated');
+  document.getElementById('EmployeeID').value = '';
+  formTitle.textContent = 'Add New Employee';
+  submitBtn.textContent = 'Add Employee';
+  cancelEditBtn.classList.add('d-none');
+}
+
+cancelEditBtn.addEventListener('click', resetForm);
+
+window.editEmployee = function (id) {
+  const emp = allEmployees.find(e => e.EmployeeID === id);
+  if (!emp) return;
+  document.getElementById('EmployeeID').value = emp.EmployeeID;
+  document.getElementById('EmployeeName').value = emp.EmployeeName;
+  document.getElementById('Email').value = emp.Email;
+  document.getElementById('Department').value = emp.Department;
+  document.getElementById('Designation').value = emp.Designation;
+  document.getElementById('Salary').value = emp.Salary;
+  formTitle.textContent = `Edit Employee #${emp.EmployeeID}`;
+  submitBtn.textContent = 'Save Changes';
+  cancelEditBtn.classList.remove('d-none');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+window.deleteEmployee = async function (id) {
+  if (!confirm(`Are you sure you want to delete employee #${id}? This cannot be undone.`)) return;
+  try {
+    const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Delete failed.', 'danger');
+      return;
+    }
+    showToast('Employee deleted.');
+    loadEmployees(document.getElementById('searchInput').value.trim());
+  } catch (err) {
+    showToast('Delete failed: ' + err.message, 'danger');
+  }
+};
+
+document.getElementById('searchBtn').addEventListener('click', () => {
+  loadEmployees(document.getElementById('searchInput').value.trim());
+});
+document.getElementById('searchInput').addEventListener('keyup', (e) => {
+  if (e.key === 'Enter') loadEmployees(e.target.value.trim());
+});
+document.getElementById('clearBtn').addEventListener('click', () => {
+  document.getElementById('searchInput').value = '';
+  loadEmployees();
+});
+
+checkHealth();
+loadEmployees();
+</script>
+</body>
+</html>
